@@ -1,102 +1,90 @@
-													
-var express = require('express');
-//Initialize the express App
-var app = express();
-var server = require('http').Server(app);
-var path = require('path'); 
-var bodyParser = require('body-parser');
-var io = require('socket.io')(server);;
-//Twitter
-var Twitter = require('twitter');
-var request = require("request");
-//MySQL
-var mysql = require('mysql');
-                                
-													
-//Establishing a connection with mysql database
-var connect =  mysql.createPool({
-	host : 'localhost',
-	user : 'root',
-	password: 'root',
-	database: 'sandeep'
+									
+//Name of the file : github-auth.js
+// Section 1 get the requirements and initialize express app
+const express = require('express');
+const request = require('request');
+const app = express();
+
+
+// Section 2- configure variables and different urls
+// config to define app settings
+// use environment variables [ process.env ] for sensitive data like api keys and secrets
+var config = {
+   client_id: process.env.28bfbb36b97efc9a12ab,
+   client_secret: process.env.83c51a22b6eeaee92cd94024c34c32cc17db415f,
+   redirect_url: 'http://localhost:3000/github/callback',
+   aurhorize_url:'https://github.com/login/oauth/authorize',
+   token_url: 'https://github.com/login/oauth/access_token',
+   user_url: 'https://api.github.com/user',
+   scope: 'user'
+ };
+
+
+// Section-3 Define the routes and callback url
+
+// define routes
+
+app.get('/github/auth', function(req,res){
+   // redirect the user to github authorization url
+   return res.redirect(config.authorize_url);
 });
 
-//Twitter Credentials
-var client = new Twitter({
-  consumer_key: '	GjGR7mrYoPfhzCM7xPxtI5zcG',
-  consumer_secret: 'H1uiyd1fn2Xp82sKaF8txioTrd8J6C9oIADPUZPHXiYitrQ87b',
-  access_token_key: 'Uxqkqn3qk3ZGN0zqY4UCvB3jW3rj7LY',
-  access_token_secret: 'p2jfzMeOobEzhNtysuQDGgGcjmLTwra2PIsDmmNpOciDB'
-});
+router.get('/github/callback', function(req,res){
+   // extract authorize code 
+   var code = req.query.code
+
+   // configure request params
+   options = {
+     method: 'POST',
+     uri: config.token_url,   
+     formData: {
+       client_id   : config.client_id,
+       client_secret   : config.client_secret,
+       code : code
+     },
+     headers: {
+       accept:  'application/json'
+     }
+   };
+
+   // make a request for auth_token using above options
+   request(options , function(e,r,b){
+   
+     // process the body
+     if(b) {
+       jb = JSON.parse(b)
+
+       // configure request to fetch user information
+       options_user = {
+         method:'GET',
+         url: config.user_url+'?access_token='+jb.access_token,
+         headers: {
+           accept: 'application/json',
+           'User-Agent': 'custom'
+         }
+       }
+       request(options_user , function(ee,rr,bb){
+         // process the body
+         if(bb) {
+           var bo = JSON.parse(bb)
+           var resp = {
+             name: bo.name ,
+             url: bo.url ,
+             id: bo.id ,
+             bio: bo.bio
+           }
+           return res.json(resp)
+         }
+         else {
+           console.log(er)
+           return res.json(er)
+         }
+       });
+     }
+   });
+ });
 
 
+// Section 4 start the app
 
-
-//starting server at 3000 port
-server.listen(3000);
-console.log("Server listening at : 3000");
-//Default Route
-app.get('/',function(req,res){
-	res.set({
-		'Access-Control-Allow-Origin' : '*'
-	});
-	return res.redirect('/public/index.html');
-});
-
-app.use('/public', express.static(__dirname + '/public'));
-app.use( bodyParser.json() );
-app.use(bodyParser.urlencoded({ // to support URL-encoded bodies
-	extended: true
-}));
-                    
-												
-io.on('connection', function (socket) {
-	//Default event just for testing
-	socket.emit('welcome', { data: 'welcome' });
-	//Keyword event is handled here
-	socket.on('keyword' , function(data){
-		console.log(data);
-		var keyword = data.keyword;
-		var stream = client.stream('statuses/filter', {track: keyword});
-		
-		stream.on('data', function(event) {
-			var tweet = event.text;
-			var user = event.user.name;
-			
-			var insert_R = 'INSERT INTO tweet_repo(keyword,user,tweet) VALUE(?,?,?)';
-			//establishing connection
-			connect.getConnection(function(err, connection){				
-			  //Inserting a record into details
-				connection.query(insert_R,[keyword,user,tweet], function(err,res){
-					if(err) throw err;
-					else {
-							var content = {
-								keyword : keyword,
-								user : user,
-								tweet : tweet
-							}
-							console.log("Keyword is ::>> " + keyword);
-							console.log("Tweeted by ::>>" + event.user.name);
-							console.log("Tweet is ::>>" + event.text );
-							console.log('Details added successfully');
-							//Emitting the data using sockets
-							socket.emit('livetweets' , { data : content })
-
-					}
-				});
-				//releasing connection
-				socket.on('stop' , function(data){
-					connection.release();
-				});
-				
-			});
-			
-		});
-
-		stream.on('error', function(error) {
-			throw error;
-		});	  
-	});
-});
-													
-												
+app.listen(3000, () => console.log('Njera github-api app listening on port 3000!'));
